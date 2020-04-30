@@ -1,14 +1,13 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import matplotlib
 import os
 from tqdm import tqdm
 from tensorboardX import SummaryWriter
 from util import utility
 from model_hinge.hinge_utility import reg_anneal
+from loss import distillation
 matplotlib.use('Agg')
-from IPython import embed
+#from IPython import embed
 
 
 class Trainer():
@@ -34,19 +33,17 @@ class Trainer():
             self.inq_steps = None
 
     def reset_after_optimization(self, epoch_continue):
-        if not self.converging:
-            # Only need to reset the optimizer and scheduler during Phase 1 and Phase 3.
-            # In Phase 4, the optimizer and scheduler is already set during the initialization of the trainer.
-            # In Phase 3, the optimizer and scheduler is not used.
+        if not self.converging and not self.args.test_only:
             self.converging = True
-            # during the converging phase, self.converging =True. Do not need to set lr_adjust_flag in make_optimizer_hinge
-            # and make_scheduler_hinge.
+            # In Phase 1 & 3, the optimizer and scheduler are reset.
+            # In Phase 2, the optimizer and scheduler is not used.
+            # In Phase 4, the optimizer and scheduler is already set during the initialization of the trainer.
+            # during the converging stage, self.converging =True. Do not need to set lr_adjust_flag in make_optimizer_hinge
+            #   and make_scheduler_hinge.
             self.optimizer = utility.make_optimizer_hinge(self.args, self.model, self.ckp, self.converging)
             self.scheduler = utility.make_scheduler_hinge(self.args, self.optimizer, self.converging)
         if not self.args.test_only and self.args.summary:
             self.writer = SummaryWriter(os.path.join(self.args.dir_save, self.args.save), comment='converging')
-        # if os.path.exists(os.path.join(self.ckp.dir, 'epochs.pt')):
-        #     self.epochs_searching = torch.load(os.path.join(self.ckp.dir, 'epochs.pt'))
         self.epoch_continue = epoch_continue
 
     def train(self):
@@ -236,13 +233,6 @@ class Trainer():
                 return epoch > 200
             else:
                 return epoch > self.args.epochs
-
-
-def distillation(y, teacher_scores, T):
-    p = F.log_softmax(y/T, dim=1)
-    q = F.softmax(teacher_scores/T, dim=1)
-    l_kl = F.kl_div(p, q, reduction='sum') * (T**2) / y.shape[0]
-    return l_kl
 
 
 def proximal_operator_l0(optimizer, regularization, lr):

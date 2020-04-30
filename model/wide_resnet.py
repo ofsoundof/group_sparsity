@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from model import common
-from IPython import embed
+#from IPython import embed
 
 
 def make_model(args, parent=False):
@@ -85,6 +85,6 @@ class Wide_ResNet(nn.Module):
 
         return out
 
-    def load(self, args, strict=True):
-        if args.pretrained:
-            self.load_state_dict(torch.load(args.pretrained), strict=strict)
+    def load(self, pretrain, strict=True):
+        if pretrain:
+            self.load_state_dict(torch.load(pretrain), strict=strict)

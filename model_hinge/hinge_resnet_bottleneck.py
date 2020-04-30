@@ -11,9 +11,8 @@ import copy
 from easydict import EasyDict as edict
 from model_hinge.hinge_utility import get_nonzero_index, plot_figure, plot_per_layer_compression_ratio
 from model.in_use.flops_counter import get_model_complexity_info
-from model.resnet164 import ResNet164
-from model.resnet50 import ResNet50
-from torchvision.models.resnet import Bottleneck
+from model.resnet import ResNet, BottleNeck
+# from torchvision.models.resnet import Bottleneck
 from IPython import embed
 
 
@@ -22,8 +21,8 @@ from IPython import embed
 ########################################################################################################################
 
 def get_compress_idx(module, percentage, threshold, p1_p2_same_ratio):
-    weight1 = module._modules['conv1'].weight.data.squeeze().t()
-    weight3 = module._modules['conv3'].weight.data.squeeze().t()
+    weight1 = module._modules['body']._modules['0'].weight.data.squeeze().t()
+    weight3 = module._modules['body']._modules['6'].weight.data.squeeze().t()
 
     norm1, pindex1 = get_nonzero_index(weight1, dim='output', counter=1, percentage=percentage, threshold=threshold)
     fix_channel = len(pindex1) if p1_p2_same_ratio else 0
@@ -47,11 +46,11 @@ def get_compress_idx(module, percentage, threshold, p1_p2_same_ratio):
 def compress_module_param(percentage, threshold, p1_p2_same_ratio, **kwargs):
     module = kwargs['module']
     
-    conv1 = module._modules['conv1']
-    batchnorm1 = module._modules['bn1']
-    conv2 = module._modules['conv2']
-    batchnorm2 = module._modules['bn2']
-    conv3 = module._modules['conv3']
+    conv1 = module._modules['body']._modules['0']
+    batchnorm1 = module._modules['body']._modules['1']
+    conv2 = module._modules['body']._modules['3']
+    batchnorm2 = module._modules['body']._modules['4']
+    conv3 = module._modules['body']._modules['6']
 
     weight1 = conv1.weight.data.squeeze().t()
     bn_weight1 = batchnorm1.weight.data
@@ -69,8 +68,8 @@ def compress_module_param(percentage, threshold, p1_p2_same_ratio, **kwargs):
     weight3 = conv3.weight.data.squeeze().t()
 
     if 'load_original_param' in kwargs and kwargs['load_original_param']: # need to pay special attention here
-        weight1_teach = kwargs['module_teacher']._modules['conv1'].weight.data.squeeze().t()
-        weight3_teach = kwargs['module_teacher']._modules['conv3'].weight.data.squeeze()
+        weight1_teach = kwargs['module_teacher']._modules['body']._modules['0'].weight.data.squeeze().t()
+        weight3_teach = kwargs['module_teacher']._modules['body']._modules['6'].weight.data.squeeze()
     else:
         weight1_teach = weight1 #TODO: whether to use copy.copy here?
         weight3_teach = weight3
@@ -109,27 +108,25 @@ def compress_module_param(percentage, threshold, p1_p2_same_ratio, **kwargs):
 
 
 
-def make_model(args, ckp):
+def make_model(args, ckp, converging):
     """
     base_module is the compressed module
     """
     if args.depth == 164:
-        base = ResNet164
-    elif args.depth == 50:
-        base = ResNet50
+        base = ResNet
     else:
         raise NotImplementedError('ResNet{}-Bottleneck is not implemented.'.format(args.depth))
 
     class Hinge(base):
 
-        def __init__(self, args):
-            self.args = args[0]
-            self.ckp = args[1]
+        def __init__(self, args, ckp, converging):
+            self.args = args
+            self.ckp = ckp
             super(Hinge, self).__init__(self.args)
 
-            # traning or loading phase of network compression
-            if self.args.model.lower().find('hinge') >= 0 and not self.args.test_only:
-                self.load(strict=True)
+            # traning or loading for searching
+            if not self.args.test_only and not converging:
+                self.load(self.args, strict=True)
                 if self.args.layer_balancing:
                     # need to calculate the layer-balancing regularizer during both training and loading phase.
                     self.layer_reg = self.calc_regularization()
@@ -148,11 +145,11 @@ def make_model(args, ckp):
             self.register_buffer('running_grad_ratio', None)
 
         def find_modules(self):
-            return [m for m in self.modules() if isinstance(m, Bottleneck)]
+            return [m for m in self.modules() if isinstance(m, BottleNeck)]
 
         def sparse_param(self, module):
-            param1 = module.state_dict(keep_vars=True)['conv1.weight']
-            param2 = module.state_dict(keep_vars=True)['conv3.weight']
+            param1 = module.state_dict(keep_vars=True)['body.0.weight']
+            param2 = module.state_dict(keep_vars=True)['body.6.weight']
             return param1, param2
 
         def calc_regularization(self):
@@ -212,6 +209,7 @@ def make_model(args, ckp):
                 projection1, projection2 = self.sparse_param(m)
                 p1_grad.append(torch.sum(torch.norm(projection1.grad.squeeze().t(), dim=0)))
                 p2_grad.append(torch.sum(torch.norm(projection2.grad.squeeze().t(), dim=1)))
+            # embed()
             return sum(p1_grad), sum(p2_grad)
 
         def update_grad_ratio(self):
@@ -290,7 +288,7 @@ def make_model(args, ckp):
                 self.load_state_dict(state_teacher, strict=True)
 
                 # get the modules
-                modules_teacher = [m for m in model_teacher.get_model().modules() if isinstance(m, Bottleneck)]
+                modules_teacher = [m for m in model_teacher.get_model().modules() if isinstance(m, BottleNeck)]
                 modules = self.find_modules()
 
                 # compress each module
@@ -365,16 +363,16 @@ def make_model(args, ckp):
                             own_state[name].data.copy_(param)
                 self.set_channels()
 
-        def load(self, strict=True):
-            if self.args.load:
-                state_dict = torch.load(self.args.teacher)
-            elif not self.args.load and self.args.pretrain:
-                state_dict = torch.load(self.args.pretrain)
-            else:
-                state_dict = None
-                # raise NotImplementedError('Do not need to load {} in this mode'.format(self.__class__.__name__))
-            if state_dict is not None:
-                self.load_state_dict(state_dict, strict=strict)
+        # def load(self, strict=True):
+        #     if self.args.load:
+        #         state_dict = torch.load(self.args.teacher)
+        #     elif not self.args.load and self.args.pretrain:
+        #         state_dict = torch.load(self.args.pretrain)
+        #     else:
+        #         state_dict = None
+        #         # raise NotImplementedError('Do not need to load {} in this mode'.format(self.__class__.__name__))
+        #     if state_dict is not None:
+        #         self.load_state_dict(state_dict, strict=strict)
 
-    return Hinge((args, ckp))
+    return Hinge(args, ckp, converging)
 

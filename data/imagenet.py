@@ -27,7 +27,7 @@ def get_loader(args, kwargs):
 
         loader_train = DataLoader(
             datasets.ImageFolder(
-                root=os.path.join(args.dir_data, 'ILSVRC2012', 'train'),
+                root=os.path.join(args.dir_data, 'train'),
                 transform=transform_train),
             batch_size=args.batch_size, shuffle=True, **kwargs
         )
@@ -61,7 +61,7 @@ def get_loader(args, kwargs):
 
     loader_test = DataLoader(
         datasets.ImageFolder(
-            root=os.path.join(args.dir_data, 'ILSVRC2012', 'val'),
+            root=os.path.join(args.dir_data, 'val'),
             transform=transform_test),
         batch_size=batch_test, shuffle=False, **kwargs
     )

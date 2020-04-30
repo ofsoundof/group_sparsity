@@ -123,11 +123,11 @@ class DenseNet(nn.Module):
         x = self.classifier(x.squeeze())
 
         return x
-    # def load(self, args, strict=True):
-    #     if args.pretrained:
-    #         self.load_state_dict(torch.load(args.pretrained), strict=strict)
 
-
+    def load(self, pretrain, strict=True):
+        # used by compression methods (Hinge).
+        if pretrain:
+            self.load_state_dict(torch.load(pretrain), strict=strict)
 
 
 def gen(target):

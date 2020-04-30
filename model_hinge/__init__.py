@@ -4,60 +4,72 @@ import os
 from importlib import import_module
 # from IPython import embed
 
+
+def teacher_model(model):
+    # Determine the teacher model for knowledge distillation.
+    model = model.lower()
+    if model.find('densenet') >= 0:
+        model = 'densenet'
+    elif model.find('resnet') >= 0:
+        model = 'resnet'
+    elif model.find('resnet_bottleneck') >= 0:
+        model = 'resnet'
+    elif model.find('resnext') >= 0:
+        model = 'resnext'
+    elif model.find('vgg') >= 0:
+        model = 'vgg'
+    elif model.find('wide_resnet') >= 0:
+        model = 'wide_resnet'
+    else:
+        raise NotImplementedError('Compressing model {} is not implemented'.format(model))
+    return  model
+
+
 class Model(nn.Module):
-    def __init__(self, args, ckp, converging=False, teacher=False):
+    def __init__(self, args, checkpoint, converging=False, teacher=False):
+        """
+        :param args:
+        :param checkpoint:
+        :param converging: needed to decide whether to load the optimization or the finetune model
+        :param teacher: indicate whether this is a teacher model used in knowledge distillation
+        """
         super(Model, self).__init__()
         print('Making model...')
+
         self.args = args
-        self.ckp = ckp
+        self.ckp = checkpoint
+        self.crop = args.crop
+        self.device = torch.device('cpu' if args.cpu else 'cuda')
+        self.precision = args.precision
+        self.n_GPUs = args.n_GPUs
+        self.save_models = args.save_models
+        print('Import Module')
         if not teacher:
-            model = self.args.model
-            pretrain = self.args.pretrain
-        else:
-            model = self.args.template
-            pretrain = self.args.teacher
-
-        self.crop = self.args.crop
-        self.device = torch.device('cpu' if self.args.cpu else 'cuda')
-        self.precision = self.args.precision
-        self.n_GPUs = self.args.n_GPUs
-        self.save_models = self.args.save_models
-
-        if model.find('DeepComp') >= 0:
-            dc_type = model.split('-')[-1]
-            module = import_module('model.deepcomp')
-            self.model = module.make_model(self.args, dc_type)
-        else:
-            print('Import Module')
+            model = args.model
+            pretrain = args.pretrain
             module = import_module('model_hinge.' + model.lower())
-            self.model = module.make_model(args, ckp)
-        # if not next(self.model.parameters()).is_cuda:
+            self.model = module.make_model(args, checkpoint, converging)
+        else:
+            model = teacher_model(args.model)
+            pretrain = args.teacher
+            module = import_module('model.' + model.lower())
+            self.model = module.make_model([args])
         self.model = self.model.to(self.device)
-        if self.args.precision == 'half': self.model = self.model.half()
-        if not self.args.cpu:
+        if args.precision == 'half':
+            self.model = self.model.half()
+        if not args.cpu:
             print('CUDA is ready!')
-            torch.cuda.manual_seed(self.args.seed)
-            if self.args.n_GPUs > 1:
+            torch.cuda.manual_seed(args.seed)
+            if args.n_GPUs > 1:
                 if not isinstance(self.model, nn.DataParallel):
-                    self.model = nn.DataParallel(self.model, range(self.args.n_GPUs))
+                    self.model = nn.DataParallel(self.model, range(args.n_GPUs))
 
         # in the test phase of network compression
-        if self.args.model.lower().find('hinge') >= 0 and self.args.test_only:
+        if args.test_only:
             if pretrain.find('merge') >= 0:
                 self.get_model().merge_conv()
 
-        # not in the training phase of network pruning
-        if not (model.lower().find('hinge') >= 0 and not self.args.test_only and not self.args.load):
-            self.load(
-                pretrain=pretrain,
-                load=self.args.load,
-                resume=self.args.resume,
-                cpu=self.args.cpu,
-                converging=converging
-            )
-        for m in self.modules():
-            if hasattr(m, 'set_range'):
-                m.set_range()
+        self.load(pretrain, args.load, args.resume, args.cpu, converging, args.test_only, teacher)
 
         print(self.get_model(), file=self.ckp.log_file)
         print(self.get_model())
@@ -99,35 +111,59 @@ class Model(nn.Module):
                     os.path.join(apath, 'model', 'model_{}.pt'.format(n))
                 )
 
-    def load(self, pretrain='', load='', resume=-1, cpu=False, converging=False):
-        f = None
-        if pretrain and not load:
-            if pretrain != 'download':
-                if pretrain.find('.pt') < 0:
-                    f = os.path.join(pretrain, 'model/model_latest.pt')
+    def load(self, pretrain='', load='', resume=-1, cpu=False, converging=False, test_only=False, teacher=False):
+        """
+        Use pretrain and load to determine how to load the model.
+        For 'Group Sparsity: the Hinge (CVPR2020)', pretrain is always set, namely, not empty string.
+        1. Phase 1, load == '', test_only = False. Training phase, the model is not loaded here (in the hinge functions).
+        2. Phase 2, load == '', test_only = True. Testing phase.
+        3. Phase 3, load != '', converging = False, loading for searching, the model is also loaded in the hinge functions.
+        4. Phase 4, load != '', converging = True, loading for converging, the model is not loaded in the hinge functions.
+        """
+        if not teacher:
+            if not load:
+                if not test_only:
+                    # Phase 1, training phase, the model is not loaded in the hinge_** functions instead of here .
+                    f = None
+                    print('During training phase, the model is loaded here.')
                 else:
-                    f = pretrain
-                print('Load pre-trained model from {}'.format(f))
-        else:
-            if load:
-                # only need to identify the directory where the models are saved.
-                if resume == -1 and not converging:
-                    print('Load model after the last epoch')
-                    resume = 'latest'
-                elif resume == -1 and converging:
-                    print('Load model after the last epoch in converging step')
-                    resume = 'converging_latest'
+                    # Phase 2, testing phase, loading the pruned model, strict = False.
+                    f = os.path.join(pretrain, 'model/model_latest.pt') if pretrain.find('.pt') < 0 else pretrain
+                    print('Load pre-trained model from {}'.format(f))
+                    strict = False
+            else:
+                if not converging:
+                    # Phase 3, loading in the searching stage, loading the unpruned model, strict =True
+                    if resume == -1:
+                        print('Load model after the last epoch')
+                        resume = 'latest'
+                    else:
+                        print('Load model after epoch {}'.format(resume))
+                    strict = True
                 else:
-                    print('Load model after epoch {}'.format(resume))
-
+                    # Phase 4, loading in the converging stage, loading the pruned model, strict = False
+                    if resume == -1:
+                        print('Load model after the last epoch in converging stage')
+                        resume = 'converging_latest'
+                    else:
+                        print('Load model after epoch {} in the converging stage'.format(resume))
+                        resume = 'converging_{}'.format(resume)
+                    strict = False
                 f = os.path.join(load, 'model', 'model_{}.pt'.format(resume))
+        else:
+            f = os.path.join(pretrain, 'model/model_latest.pt') if pretrain.find('.pt') < 0 else pretrain
+            print('Load pre-trained model from {}'.format(f))
+            strict = True
 
         if f:
             kwargs = {}
             if cpu:
                 kwargs = {'map_location': lambda storage, loc: storage}
             state = torch.load(f, **kwargs)
-            self.get_model().load_state_dict(state, strict=True)
+            # for (k1, v1), (k2, v2) in zip(self.state_dict().items(), state.items()):
+            #     print(k1, v1.shape)
+            #     print(k2, v2.shape)
+            self.get_model().load_state_dict(state, strict=strict)
 
     def begin(self, epoch, ckp):
         self.train()
@@ -160,3 +196,4 @@ class Model(nn.Module):
 
         ckp.write_log('1x1: {:,}\n3x3: {:,}\nOthers: {:,}\nLinear:{:,}\n'.
                       format(kernels_1x1, kernels_3x3, kernels_others, linear), refresh=True)
+

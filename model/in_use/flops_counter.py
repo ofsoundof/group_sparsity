@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from model import common
-# from model_dhp.dhp import conv_dhp
+
 
 
 def get_model_flops(model, input_res, print_per_layer_stat=True, input_constructor=None):

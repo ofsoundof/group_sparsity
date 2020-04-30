@@ -9,7 +9,7 @@ import torch.optim.lr_scheduler as lrs
 import misc.warm_multi_step_lr as misc_wms
 import misc.custom_sgd as misc_cs
 from misc.apg import APG
-from IPython import embed
+#from IPython import embed
 class timer():
     def __init__(self):
         self.acc = 0
@@ -121,21 +121,7 @@ class checkpoint():
                     )
 
 
-def make_optimizer(args, target, ckp=None, lr=None, status=True, prune=True):
-    '''
-    :param args:
-    :param target:
-    :param ckp:
-    :param lr:
-    :param status: used to distinguish mode 2 and mode 3
-                   mode 1, args.load == ''
-                   True -> in mode 2, loading optimizer from pruning epoch
-                   False -> in mode 3, loading optimizer from finetuning epoch
-    :param prune: True -> prune optimizer
-                  False -> finetune optimizer
-    :return:
-    '''
-
+def make_optimizer(args, target, ckp=None, lr=None):
     if args.optimizer.find('SGD') >= 0:
         optimizer_function = optim.SGD
         kwargs = {'momentum': args.momentum, 'nesterov': args.nesterov}
@@ -145,72 +131,30 @@ def make_optimizer(args, target, ckp=None, lr=None, status=True, prune=True):
                   'regularization': args.prune_regularization, 'prox_frequency': args.prox_frequency}
     elif args.optimizer == 'ADAM':
         optimizer_function = optim.Adam
-        kwargs = {
-            'betas': args.betas,
-            'eps': args.epsilon
-        }
+        kwargs = {'betas': args.betas,
+            'eps': args.epsilon}
     elif args.optimizer == 'RMSprop':
         optimizer_function = optim.RMSprop
         kwargs = {'eps': args.epsilon}
     elif args.optimizer == 'CustomSGD':
         optimizer_function = misc_cs.CustomSGD
         kwargs = {'momentum': args.momentum, 'nesterov': args.nesterov}
+    else:
+        raise NotImplementedError('Optimizer {} is not implemented'.format(args.optimizer))
 
     kwargs['lr'] = args.lr if lr is None else lr
     kwargs['weight_decay'] = args.weight_decay
 
-    if args.lr_separate == 'whole':
-        trainable = filter(lambda x: x.requires_grad, target.parameters())
-        optimizer = optimizer_function(trainable, **kwargs)
-    elif args.lr_separate == 'separate':
-        if args.p1_p2_regularization == '':
-            # for MobileNet and ResNeXt, P1 and P2 are combined. For DenseNet, there is only P1.
-            trainable = list(filter(lambda x: x.requires_grad, target.parameters()))
-            if args.model.lower().find('mobilenet') >= 0:
-                trainable_proj = [x for x in target.parameters() if
-                                  x.dim() == 4 and x.size()[-1] == 1 and x.size()[0] > 16 and x.size()[0] < 1280]
-                trainable_finetune = [x for x in target.parameters() if
-                                      not (x.dim() == 4 and x.size()[-1] == 1 and x.size()[0] > 16 and x.size()[0] < 1280)]
-            else:
-                trainable_proj = [x for x in trainable if x.dim() == 4 and x.size()[-1] == 1]
-                trainable_finetune = [x for x in trainable if x.dim() != 4 or x.size()[-1] != 1]
-            optimizer = optimizer_function([{'params': trainable_finetune, 'lr': kwargs['lr'] * args.lr_ratio},
-                                            {'params': trainable_proj}],
-                                           **kwargs)
-        elif args.p1_p2_regularization == 'lr':
-            # This is used for ResNet
-            trainable = list(filter(lambda x: x.requires_grad, target.parameters()))
-            trainable_finetune = [x for x in trainable if x.dim() != 4 or x.size()[-1] != 1]
-            trainable_proj1 = []
-            trainable_proj2 = []
-            for m in target.get_model().find_modules():
-                # if args.model.lower() == 'prune_mobilenetv2' or args.model.lower() == 'prune_resnext':
-                #     proj1, proj2, _ = target.get_model().sparse_param(m)
-                # else:
-                proj1, proj2 = target.get_model().sparse_param(m)
-                trainable_proj1.append(proj1)
-                trainable_proj2.append(proj2)
-            optimizer = optimizer_function([{'params': trainable_finetune, 'lr': kwargs['lr'] * args.lr_ratio},
-                                            {'params': trainable_proj1}, {'params': trainable_proj2}],
-                                           **kwargs)
-    # trainable = filter(lambda x: x.requires_grad, target.parameters())
-    # optimizer = optimizer_function(trainable, **kwargs)
-    # mode 1: args.load == ''
-    if args.load != '' and ckp is not None:
-        if status: # mode 2
-            if prune:
-                print('Loading the pruning optimizer from the checkpoint...')
-                optimizer.load_state_dict(torch.load(os.path.join(ckp.dir, 'optimizer.pt')))
-        else: # mode 3
-            # embed()
-            if not prune:
-                print('Loading the finetuning optimizer from the checkpoint...')
-                optimizer.load_state_dict(torch.load(os.path.join(ckp.dir, 'optimizer_finetune.pt')))
+    trainable = filter(lambda x: x.requires_grad, target.parameters())
+    optimizer = optimizer_function(trainable, **kwargs)
 
+    if args.load != '' and ckp is not None:
+        print('Loading the optimizer from the checkpoint...')
+        optimizer.load_state_dict(torch.load(os.path.join(ckp.dir, 'optimizer.pt')))
     return optimizer
 
 
-def make_scheduler(args, target, resume=-1, last_epoch=-1, prune=True):
+def make_scheduler(args, target):
     '''
     :param args:
     :param target:
@@ -227,23 +171,21 @@ def make_scheduler(args, target, resume=-1, last_epoch=-1, prune=True):
         if args.decay.find('warm') >= 0:
             scheduler_function = misc_wms.WarmMultiStepLR
             kwargs['scale'] = args.linear
-        elif args.decay.find('cosine') >= 0:
-            kwargs['start'] = args.start
-            scheduler_function = misc_wms.CosineMultiStepLR
-        elif args.decay.find('finetune') >= 0:
-            scheduler_function = misc_wms.FinetuneMultiStepLR
-            kwargs['factor'] = args.factor
-            kwargs['start'] = args.start
-            kwargs['grad_ratio_method'] = args.grad_ratio_method
         else:
             scheduler_function = lrs.MultiStepLR
-        kwargs['last_epoch'] = last_epoch
-        scheduler = scheduler_function(target, **kwargs)
-    # embed()
-    if not prune or (prune and args.load != '' and resume > 0):
-        for _ in range(resume):
-            scheduler.step()
-
+    elif args.decay.find('cosine') >= 0:
+        # kwargs['start'] = args.start
+        # scheduler_function = misc_wms.CosineMultiStepLR
+        kwargs = {'T_max': args.epochs}
+        scheduler_function = lrs.CosineAnnealingLR
+    if args.load != '':
+        last_epoch = torch.load(os.path.join(args.dir_save, args.save, 'epochs.pt'))
+    else:
+        last_epoch = -1
+    kwargs['last_epoch'] = last_epoch
+    scheduler = scheduler_function(target, **kwargs)
+    # else:
+    #     raise NotImplementedError('Scheduler is not implemented')
     return scheduler
 
 
@@ -323,16 +265,6 @@ def make_optimizer_hinge(args, target, ckp=None, converging=False, lr_adjust_fla
 
 
 def make_scheduler_hinge(args, target, converging=False, lr_adjust_flag=False):
-    '''
-    :param args:
-    :param target:
-    :param resume:
-    :param last_epoch:
-    :param prune: True -> prune scheduler
-                  False -> finetune scheduler
-    :return:
-    '''
-    # embed()
     if args.decay.find('step') >= 0:
         milestones = list(map(lambda x: int(x), args.decay.split('-')[1:]))
         kwargs = {'milestones': milestones, 'gamma': args.gamma}
@@ -360,88 +292,5 @@ def make_scheduler_hinge(args, target, converging=False, lr_adjust_flag=False):
     else:
         raise NotImplementedError('Scheduler is not implemented')
 
-    # if args.load != '':
-    #
-    #     for _ in range(resume):
-    #         scheduler.step()
-    #
-    # if not prune or (prune and args.load != '' and resume > 0):
-    #     for _ in range(resume):
-    #         scheduler.step()
-
     return scheduler
 
-
-def make_optimizer_dhp(args, target, ckp=None, lr=None, finetune=False):
-
-    if args.optimizer.find('SGD') >= 0:
-        optimizer_function = optim.SGD
-        kwargs = {'momentum': args.momentum, 'nesterov': args.nesterov}
-    elif args.optimizer == 'ADAM':
-        optimizer_function = optim.Adam
-        kwargs = {
-            'betas': args.betas,
-            'eps': args.epsilon
-        }
-    elif args.optimizer == 'RMSprop':
-        optimizer_function = optim.RMSprop
-        kwargs = {'eps': args.epsilon}
-    else:
-        raise NotImplementedError('Optimizer {} is not implemented'.format(args.optimizer))
-    kwargs['lr'] = args.lr if lr is None else lr
-    kwargs['weight_decay'] = args.weight_decay
-
-    trainable = filter(lambda x: x.requires_grad, target.parameters())
-    optimizer = optimizer_function(trainable, **kwargs)
-
-    if args.load != '' and ckp is not None:
-        if not finetune:
-            print('Loading the pruning optimizer from the checkpoint...')
-            optimizer.load_state_dict(torch.load(os.path.join(ckp.dir, 'optimizer.pt')))
-        else:
-            print('Loading the finetuning optimizer from the checkpoint...')
-            optimizer.load_state_dict(torch.load(os.path.join(ckp.dir, 'optimizer_finetune.pt')))
-
-    return optimizer
-
-
-def make_scheduler_dhp(args, target, decay, last_epoch=-1, finetune=False):
-    '''
-    :param args:
-    :param target:
-    :param resume:
-    :param last_epoch:
-    :param finetune: True -> in the finetuning stage; False -> in the optimization stage
-    :return:
-    '''
-    # embed()
-    if decay.find('step') >= 0:
-        milestones = list(map(lambda x: int(x), decay.split('-')[1:]))
-        kwargs = {'milestones': milestones, 'gamma': args.gamma}
-        if decay.find('warm') >= 0:
-            scheduler_function = misc_wms.WarmMultiStepLR
-            kwargs['scale'] = args.linear
-        elif decay.find('cosine') >= 0:
-            kwargs['start'] = args.start
-            scheduler_function = misc_wms.CosineMultiStepLR
-        elif decay.find('finetune') >= 0:
-            scheduler_function = misc_wms.FinetuneMultiStepLR
-            kwargs['factor'] = args.factor
-            kwargs['start'] = args.start
-            kwargs['grad_ratio_method'] = args.grad_ratio_method
-        else:
-            scheduler_function = lrs.MultiStepLR
-        kwargs['last_epoch'] = last_epoch
-        scheduler = scheduler_function(target, **kwargs)
-    else:
-        raise NotImplementedError('Scheduler is not implemented')
-
-    if args.load != '':
-        if finetune:
-            resume = torch.load(os.path.join(args.dir_save, args.save, 'epochs.pt'))
-        else:
-            resume = torch.load(os.path.join(args.dir_save, args.save, 'epochs_finetune.pt'))
-        for _ in range(resume):
-            scheduler.step()
-
-    return scheduler

@@ -2,7 +2,7 @@ import os
 from importlib import import_module
 import torch
 import torch.nn as nn
-from IPython import embed
+#from IPython import embed
 
 class Model(nn.Module):
     def __init__(self, *args):
@@ -40,14 +40,14 @@ class Model(nn.Module):
         #     self.get_model().merge_conv()
 
         # not in the training phase of network pruning
-        if not (self.args.model.lower().find('prune') >= 0 and not self.args.test_only and not self.args.load):
-            self.load(
-                self.ckp.dir,
-                pretrained=self.args.pretrained,
-                load=self.args.load,
-                resume=self.args.resume,
-                cpu=self.args.cpu
-            )
+        # if not (self.args.model.lower().find('prune') >= 0 and not self.args.test_only and not self.args.load):
+        self.load(
+            self.ckp.dir,
+            pretrain=self.args.pretrain,
+            load=self.args.load,
+            resume=self.args.resume,
+            cpu=self.args.cpu
+        )
         for m in self.modules():
             if hasattr(m, 'set_range'):
                 m.set_range()
@@ -75,13 +75,13 @@ class Model(nn.Module):
     def state_dict(self, **kwargs):
         return self.get_model().state_dict(**kwargs)
 
-    def save(self, apath, epoch, finetune=False, is_best=False):
+    def save(self, apath, epoch, converging=False, is_best=False):
         target = self.get_model().state_dict()
 
         conditions = (True, is_best, self.save_models)
 
-        if finetune:
-            names = ('finetune_latest', 'finetune_best', 'finetune_{}'.format(epoch))
+        if converging:
+            names = ('converging_latest', 'converging_best', 'converging_{}'.format(epoch))
         else:
             names = ('latest', 'best', '{}'.format(epoch))
 
@@ -92,12 +92,12 @@ class Model(nn.Module):
                     os.path.join(apath, 'model', 'model_{}.pt'.format(n))
                 )
 
-    def load(self, apath, pretrained='', load='', resume=-1, cpu=False):
+    def load(self, apath, pretrain='', load='', resume=-1, cpu=False):
         f = None
-        if pretrained:
-            if pretrained != 'download':
-                print('Load pre-trained model from {}'.format(pretrained))
-                f = pretrained
+        if pretrain:
+            if pretrain != 'download':
+                print('Load pre-trained model from {}'.format(pretrain))
+                f = pretrain
         else:
             if load:
                 if resume == -1:
@@ -105,7 +105,7 @@ class Model(nn.Module):
                     resume = 'latest'
                 elif resume == -2:
                     print('Load model after the last epoch in finetuning step')
-                    resume = 'finetune_latest'
+                    resume = 'converging_latest'
                 else:
                     print('Load model after epoch {}'.format(resume))
 
@@ -117,7 +117,9 @@ class Model(nn.Module):
                 kwargs = {'map_location': lambda storage, loc: storage}
 
             state = torch.load(f, **kwargs)
-            # embed()
+            # for (k1, v1), (k2, v2) in zip(self.state_dict().items(), state.items()):
+            #     print(k1, v1.shape)
+            #     print(k2, v2.shape)
             self.get_model().load_state_dict(state, strict=True)
 
     def begin(self, epoch, ckp):
@@ -152,14 +154,14 @@ class Model(nn.Module):
         ckp.write_log('1x1: {:,}\n3x3: {:,}\nOthers: {:,}\nLinear:{:,}\n'.
                       format(kernels_1x1, kernels_3x3, kernels_others, linear), refresh=True)
 
-        if self.args.debug:
-            def _get_flops(conv, x, y):
-                _, _, h, w = y.size()
-                kh, kw = conv.kernel_size
-                conv.flops = h * w *conv.in_channels * conv.out_channels * kh * kw
-                conv.flops_original = conv.flops
-
-            for m in self.model.modules():
-                if isinstance(m, nn.Conv2d):
-                    m.register_forward_hook(_get_flops)
+        # if self.args.debug:
+        #     def _get_flops(conv, x, y):
+        #         _, _, h, w = y.size()
+        #         kh, kw = conv.kernel_size
+        #         conv.flops = h * w *conv.in_channels * conv.out_channels * kh * kw
+        #         conv.flops_original = conv.flops
+        #
+        #     for m in self.model.modules():
+        #         if isinstance(m, nn.Conv2d):
+        #             m.register_forward_hook(_get_flops)
 

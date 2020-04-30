@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
-from IPython import embed
+import torch.nn.functional as F
+#from IPython import embed
 import matplotlib
 matplotlib.use('Agg')
 
@@ -183,3 +184,24 @@ class Loss(nn.modules.loss._Loss):
                 for _ in range(len(self.log)):
                     l.scheduler.step()
 
+# vanilla knowledge distillation loss
+def distillation(y, teacher_scores, T):
+    p = F.log_softmax(y/T, dim=1)
+    q = F.softmax(teacher_scores/T, dim=1)
+    l_kl = F.kl_div(p, q, reduction='sum') * (T**2) / y.shape[0]
+    return l_kl
+
+
+# similarity preserving knowledge distillation loss
+def similarity_preserving(student_feature, teacher_feature):
+    batch_size = student_feature.shape[0]
+    student_feature = student_feature.reshape(batch_size, -1)
+    teacher_feature = teacher_feature.reshape(batch_size, -1)
+
+    student_correlation = torch.matmul(student_feature, student_feature.t())
+    teacher_correlation = torch.matmul(teacher_feature, teacher_feature.t())
+    student_correlation = student_correlation / torch.norm(student_correlation, p=2, dim=1).unsqueeze(dim=1)
+    teacher_correlation = teacher_correlation / torch.norm(teacher_correlation, p=2, dim=1).unsqueeze(dim=1)
+
+    similarity = torch.mean((student_correlation - teacher_correlation) ** 2)
+    return similarity

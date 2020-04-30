@@ -1,6 +1,6 @@
 from torch.optim import SGD
 import torch
-from IPython import embed
+#from IPython import embed
 
 def proximal_operator_l1(param, i, regularization, lr):
         ps = param.shape

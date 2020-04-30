@@ -4,7 +4,7 @@ See the paper "Aggregated Residual Transformations for Deep Neural Networks" for
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from IPython import embed
+#from IPython import embed
 
 def make_model(args, parent=False):
     return ResNeXt(args[0])
@@ -88,9 +88,10 @@ class ResNeXt(nn.Module):
         out = self.linear(out)
         return out
 
-    # def load(self, args, strict=True):
-    #     if args.pretrained:
-    #         self.load_state_dict(torch.load(args.pretrained), strict=strict)
+    def load(self, pretrain, strict=True):
+        # used by compression methods (Hinge).
+        if pretrain:
+            self.load_state_dict(torch.load(pretrain), strict=strict)
 
 
 # def ResNeXt29_2x64d():

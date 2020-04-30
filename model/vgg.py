@@ -3,9 +3,9 @@ import os
 import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
-from model import common_tmp
 from model import common
-import torchvision.models as models
+
+
 def make_model(args, parent=False):
     return VGG(args[0])
 
@@ -17,35 +17,6 @@ class VGG(nn.Module):
         norm = None
         self.norm = norm
         bias = not args.no_bias
-
-        if args.overparam_type == '1':
-            conv = common_tmp.conv3x3_1
-        elif args.overparam_type == '2':
-            conv = common_tmp.conv3x3_2
-        elif args.overparam_type == '3':
-            conv = common_tmp.conv3x3_3
-        elif args.overparam_type == '4':
-            conv = common_tmp.conv3x3_4
-        elif args.overparam_type == '4tensor1':
-            conv = common_tmp.conv3x3_4tensor1
-        elif args.overparam_type == '4tensor2':
-            conv = common_tmp.conv3x3_4tensor2
-        elif args.overparam_type == '4tensor3':
-            conv = common_tmp.conv3x3_4tensor3
-        elif args.overparam_type == '5':
-            conv = common_tmp.conv3x3_5
-        elif args.overparam_type == '5relu':
-            conv = common_tmp.conv3x3_5relu
-        elif args.overparam_type == '5bias1':
-            conv = common_tmp.conv3x3_5bias1
-        elif args.overparam_type == '5bias2':
-            conv = common_tmp.conv3x3_5bias2
-        elif args.overparam_type == 'R1':
-            conv = common.ROPConv1
-        elif args.overparam_type == 'R2':
-            conv = common.ROPConv2
-        else:
-            raise NotImplementedError
 
         configs = {
             'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
@@ -65,7 +36,7 @@ class VGG(nn.Module):
                 else:
                     stride = 2 if i == 0 and args.data_train.find('Tiny') >= 0 else 1
                     body_list.append(common.BasicBlock(in_channels, v, args.kernel_size, stride=stride,
-                                                       bias=bias, conv3x3=conv))
+                                                       bias=bias, conv3x3=conv3x3))
                     in_channels = v
         else:
             for i, v in enumerate(configs[args.vgg_type]):
@@ -109,8 +80,8 @@ class VGG(nn.Module):
             # )
         # print(conv3x3, conv3x3 == common.default_conv or conv3x3 == nn.Conv2d)
 
-        if conv3x3 == common.default_conv or conv3x3 == nn.Conv2d:
-            self.load(args, strict=True)
+        # if conv3x3 == common.default_conv or conv3x3 == nn.Conv2d:
+        #     self.load(args, strict=True)
 
     def forward(self, x):
         x = self.features(x)
@@ -123,23 +94,23 @@ class VGG(nn.Module):
         model_dir = os.path.join('..', 'models')
         os.makedirs(model_dir, exist_ok=True)
         if args.data_train.find('CIFAR') >= 0:
-            if args.pretrained == 'download' or args.extend == 'download':
+            if args.pretrain == 'download' or args.extend == 'download':
                 url = (
                     'https://cv.snu.ac.kr/'
                     'research/clustering_kernels/models/vgg16-89711a85.pt'
                 )
 
                 state = model_zoo.load_url(url, model_dir=model_dir)
-            elif args.pretrained:
-                state = torch.load(args.pretrained)
+            elif args.pretrain:
+                state = torch.load(args.pretrain)
             elif args.extend:
                 state = torch.load(args.extend)
             else:
                 common.init_vgg(self)
                 return
         elif args.data_train == 'ImageNet':
-            if args.pretrained == 'download':
-                #print('pretrained download')
+            if args.pretrain == 'download':
+                #print('pretrain download')
                 if self.norm is not None:
                     url = 'https://download.pytorch.org/models/vgg16_bn-6c64b313.pth'
                 else:

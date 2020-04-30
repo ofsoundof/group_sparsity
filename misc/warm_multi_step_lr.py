@@ -1,7 +1,7 @@
 import math
 from bisect import bisect_right
 from torch.optim.lr_scheduler import _LRScheduler
-from IPython import embed
+#from IPython import embed
 # MultiStep learning rate scheduler with warm restart
 class WarmMultiStepLR(_LRScheduler):
     def __init__(self, optimizer, milestones, gamma=0.1, last_epoch=-1, scale=1):
@@ -115,45 +115,3 @@ class CosineMultiStepLR(_LRScheduler):
             return [base_lr * (1 + math.cos(math.pi * (self.last_epoch + 72) / 150)) / 2
                     for base_lr in self.base_lrs]
 
-
-# class FinetuneMultiStepLR(_LRScheduler):
-#
-#     def __init__(self, optimizer, milestones, gamma=0.1, last_epoch=-1, factor=1, start=3):
-#         if not list(milestones) == sorted(milestones):
-#             raise ValueError('Milestones should be a list of'
-#                              ' increasing integers. Got {}', milestones)
-#         self.milestones = milestones
-#         self.gamma = gamma
-#         self.factor = factor
-#         self.start = start
-#         super(FinetuneMultiStepLR, self).__init__(optimizer, last_epoch)
-#
-#     def get_lr(self):
-#         x = bisect_right(self.milestones, self.last_epoch)
-#         # print(x, x < self.start, self.factor)
-#         if x < self.start:
-#             return [base_lr * self.gamma ** x for base_lr in self.base_lrs]
-#         else:
-#             self.base_lrs = [self.base_lrs[1], self.base_lrs[1]]
-#             return [self.factor * base_lr * self.gamma ** (x - 1) for base_lr in self.base_lrs]
-
-# class CosineMultiStepLR(_LRScheduler):
-#
-#     def __init__(self, optimizer, milestones, gamma=0.1, last_epoch=-1, start=3):
-#         if not list(milestones) == sorted(milestones):
-#             raise ValueError('Milestones should be a list of'
-#                              ' increasing integers. Got {}', milestones)
-#         self.milestones = milestones
-#         self.gamma = gamma
-#         self.start = start
-#         super(CosineMultiStepLR, self).__init__(optimizer, last_epoch)
-#
-#     def get_lr(self):
-#         x = bisect_right(self.milestones, self.last_epoch)
-#         # print(x, x < self.start, self.factor)
-#         if x < self.start:
-#             return [base_lr * self.gamma ** x for base_lr in self.base_lrs]
-#         else:
-#             self.base_lrs = [0.05, 0.05]
-#             return [base_lr * (1 + math.cos(math.pi * (self.last_epoch + 72) / 150)) / 2
-#                     for base_lr in self.base_lrs]

@@ -79,6 +79,8 @@ parser.add_argument('--kernel_size', type=int, default=3,
                     help='kernel size')
 parser.add_argument('--no_bias', action='store_true',
                     help='do not use bias term for conv layer')
+parser.add_argument('--downsample_type', type=str, default='C',
+                    help='downsample type of ResNet')
 parser.add_argument('--precision', default='single',
                     help='model and data precision')
 # wide resnet specification
@@ -94,6 +96,13 @@ parser.add_argument('--bottleneck_width', type=int, default=4,
 # mobilenetv1, mobilenetv2, mnasnet, and shufflenetv2
 parser.add_argument('--width_mult', type=float, default='1.0',
                     help='width multiplication scale for mobilenet_v1 and mobilenet_v2')
+# mobilenetv3
+parser.add_argument('--mode', type=str, default='large', choices=['large', 'small'],
+                    help='the mode of mobilenetv3')
+# regnet
+parser.add_argument('--regime', type=str, default='large',
+                    choices=['x_200mf', 'x_400mf', 'x_600mf', 'x_800mf', 'y_200mf', 'y_400mf', 'y_600mf', 'y_800mf'],
+                    help='the flops regime of regnet')
 # network FLOPs compression ratio
 parser.add_argument('--ratio', type=float, default=0.2,
                     help='compression ratio')
@@ -121,7 +130,7 @@ parser.add_argument('--decay', default='step-150-225',
                     help='learning rate decay type')
 parser.add_argument('--gamma', type=float, default=0.1,
                     help='learning rate decay factor')
-parser.add_argument('--optimizer', type=str, default='SGD', choices=['SGD', 'Adam', 'PG', 'APG'],
+parser.add_argument('--optimizer', type=str, default='SGD', choices=['SGD', 'Adam', 'PG', 'APG', 'RMSprop'],
                     help='optimizer to use. SGD for image classification, PG for the Hinge method')
 parser.add_argument('--momentum', type=float, default=0.9,
                     help='SGD momentum')

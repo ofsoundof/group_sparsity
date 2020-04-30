@@ -1,7 +1,5 @@
 __author__ = 'Yawei Li'
 import torch
-import torch.optim as optim
-import torch.optim.lr_scheduler as lrs
 from torch.nn import init
 from torchvision.utils import make_grid
 from numpy import linalg
@@ -12,7 +10,7 @@ import copy
 import matplotlib.pyplot as plt
 from model.in_use.flops_counter import get_model_complexity_info
 from contextlib import contextmanager
-from IPython import embed
+#from IPython import embed
 
 
 ########################################################################################################################
@@ -157,48 +155,6 @@ def init_weight_proj(weight, init_method, d=0, s=0.1):
 
 
 ########################################################################################################################
-# Optimizer and Scheduler
-########################################################################################################################
-
-
-def make_optimizer(args, target, lr=None, separate=False, scale=0.1):
-    if args.optimizer == 'SGD':
-        optimizer_function = optim.SGD
-        kwargs = {'momentum': args.momentum, 'nesterov': args.nesterov}
-    elif args.optimizer == 'ADAM':
-        optimizer_function = optim.Adam
-        kwargs = {'betas': args.betas, 'eps': args.epsilon}
-    else:
-        raise NotImplementedError('Optimizer {} not defined'.format(args.optimizer))
-
-    kwargs['lr'] = args.lr if lr is None else lr
-    kwargs['weight_decay'] = args.weight_decay
-
-    if not separate:
-        trainable = filter(lambda x: x.requires_grad, target.parameters())
-        optimizer = optimizer_function(trainable, **kwargs)
-    else:
-        trainable = list( filter(lambda x: x.requires_grad, target.parameters()))
-        trainable_proj = [x for x in trainable if x.dim() == 4 and x.size()[-1] == 1]
-        # embed()
-        trainable_finetune = [x for x in trainable if x.dim() != 4 or x.size()[-1] != 1]
-        optimizer = optimizer_function([{'params': trainable_finetune},
-                                        {'params': trainable_proj, 'lr': kwargs['lr'] * scale}],
-                                       **kwargs)
-
-    return optimizer
-
-
-def make_scheduler(args, target, last_epoch=-1):
-    milestones = list(map(lambda x: int(x), args.decay.split('-')[1:]))
-    kwargs = {'milestones': milestones, 'gamma': args.gamma, 'last_epoch': last_epoch}
-    scheduler_function = lrs.MultiStepLR
-    scheduler = scheduler_function(target, **kwargs)
-
-    return scheduler
-
-
-########################################################################################################################
 # The network and ResBlock compression main function
 ########################################################################################################################
 def feature_visualize(feature, row=None, column=None, normalize=False, padding=2):
@@ -230,6 +186,10 @@ def print_array_on_one_line():
     yield
     np.set_printoptions(**oldoptions)
 
+
+########################################################################################################################
+# select the remaining channels
+########################################################################################################################
 
 def get_nonzero_index(x, dim='output', counter=1, percentage=0.2, threshold=5e-3, fix_channel=0):
     n = torch.norm(x, p=2, dim=0 if dim == 'output' else 1)
@@ -278,6 +238,11 @@ def get_nonzero_index(x, dim='output', counter=1, percentage=0.2, threshold=5e-3
     return n, f
 
 
+########################################################################################################################
+# plot the figures
+########################################################################################################################
+
+# used by compute_loss method in the hinge_** functions
 def plot_figure(filter_matrix, l, filename):
     filter_matrix = torch.norm(filter_matrix, dim=0)
     axis = np.array(list(range(1, filter_matrix.shape[0]+1)))
@@ -296,6 +261,7 @@ def plot_figure(filter_matrix, l, filename):
     plt.close(fig)
 
 
+# used by main_hinge
 def plot_compression_ratio(compression_ratio, filename, frequency_per_epoch=1):
     if frequency_per_epoch == 1:
         axis = np.array(list(range(1, len(compression_ratio) + 1)))
@@ -313,6 +279,7 @@ def plot_compression_ratio(compression_ratio, filename, frequency_per_epoch=1):
     plt.close(fig)
 
 
+# used by print_compress_info method in the hinge_** functions
 def plot_per_layer_compression_ratio(ratio_per_layer, filename):
     channels = np.array(list(range(1, len(ratio_per_layer[0]) + 1)))
     fig = plt.figure()
@@ -327,11 +294,15 @@ def plot_per_layer_compression_ratio(ratio_per_layer, filename):
     plt.close(fig)
 
 
+########################################################################################################################
+# functions used by main_hinge and trainer. Used during the optimization.
+########################################################################################################################
+
 def calc_model_complexity(model):
     model = model.get_model()
     model.flops_compress, model.params_compress = get_model_complexity_info(model, model.input_dim,
                                                                            print_per_layer_stat=False)
-    print('FLOPs ratio {:.2f} = {:.4f} [G] / {:.4f} [G]; Parameter ratio {:.2f} = {:.2f} [k] / {:.2f} [k].\n\n'
+    print('FLOPs ratio {:.2f} = {:.4f} [G] / {:.4f} [G]; Parameter ratio {:.2f} = {:.2f} [k] / {:.2f} [k].'
           .format(model.flops_compress / model.flops * 100, model.flops_compress / 10. ** 9, model.flops / 10. ** 9,
                   model.params_compress / model.params * 100, model.params_compress / 10. ** 3, model.params / 10. ** 3))
 
@@ -358,6 +329,13 @@ def calc_model_complexity_running(model, merge_flag=False):
 
 
 def binary_search(model, target, merge_flag=False):
+    """
+    Binary search algorithm to determine the threshold
+    :param model:
+    :param target:
+    :param merge_flag:
+    :return:
+    """
     # target = 0.70
     # threshold = model.get_model().args.threshold
     step = 0.01
@@ -373,7 +351,7 @@ def binary_search(model, target, merge_flag=False):
         calc_model_complexity_running(model, merge_flag)
         status = model.get_model().flops_compress / model.get_model().flops
 
-        string = 'Iter {}: current step={:1.4f}, current threshold={:2.8f}, status={:2.4f}, flops={}.' \
+        string = 'Iter {}: current step={:1.4f}, current threshold={:2.8f}, status={:2.4f}, flops={}.\n' \
             .format(counter, step, model.get_model().args.threshold, status, model.get_model().flops_compress)
         print(string)
 
@@ -392,13 +370,22 @@ def binary_search(model, target, merge_flag=False):
             counter += 1
             # deal with the unexpected status
             if model.get_model().args.threshold < 0 or status <= 0:
-                print('Status {} or threshold {} is out of range'.format(model.get_model().args.threshold, status))
+                print('Status {} or threshold {} is out of range'.format(status, model.get_model().args.threshold))
                 break
         else:
             print('The target compression ratio is achieved. The loop is stopped')
 
 
 def reg_anneal(lossp, regularization_factor, annealing_factor, annealing_t1, annealing_t2):
+    """
+    Anneal the regularization factor
+    :param lossp:
+    :param regularization_factor:
+    :param annealing_factor:
+    :param annealing_t1:
+    :param annealing_t2:
+    :return:
+    """
     if annealing_factor == 0:
         regularization = regularization_factor
     else:

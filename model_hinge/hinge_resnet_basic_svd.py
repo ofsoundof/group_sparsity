@@ -1,6 +1,6 @@
 """
 Group Sparsity: The Hinge Between Filter Pruning and Decomposition forNetwork Compression
-This module implement the proposed Hinge method to VGG.
+This module implement the proposed Hinge method to ResNet20 and ResNet56.
 """
 __author__ = 'Yawei Li'
 import torch
@@ -8,10 +8,10 @@ import torch.nn as nn
 import os
 import math
 from easydict import EasyDict as edict
-from model.vgg import VGG
-from model.common import BasicBlock
+from model.resnet import ResBlock, ResNet
 from model_hinge.hinge_utility import init_weight_proj, get_nonzero_index, plot_figure, plot_per_layer_compression_ratio
 from model.in_use.flops_counter import get_model_complexity_info
+from model_hinge.hinge_resnet_basic import modify_submodules, set_module_param
 #from IPython import embed
 
 
@@ -19,13 +19,16 @@ from model.in_use.flops_counter import get_model_complexity_info
 # used to edit the modules and parameters during the PG optimization and continuing training stage.
 ########################################################################################################################
 
-def get_compress_idx(module, percentage, threshold):
-    conv12 = module[0][1]
+def get_compress_idx(module, percentage, threshold, p1_p2_same_ratio):
+    body = module._modules['body']
+    conv12 = body._modules['0']._modules['1']
+    conv22 = body._modules['3']._modules['1']
     projection1 = conv12.weight.data.squeeze().t()
-    # decomposition
+    projection2 = conv22.weight.data.squeeze().t()
     norm1, pindex1 = get_nonzero_index(projection1, dim='input', counter=1, percentage=percentage, threshold=threshold)
-    # pruning
-    norm2, pindex2 = get_nonzero_index(projection1, dim='output', counter=1, percentage=percentage, threshold=threshold)
+    fix_channel = len(pindex1) if p1_p2_same_ratio else 0
+    norm2, pindex2 = get_nonzero_index(projection2, dim='input', counter=1, percentage=percentage, threshold=threshold,
+                                       fix_channel=fix_channel)
     def _get_compress_statistics(norm, pindex):
         remain_norm = norm[pindex]
         channels = norm.shape[0]
@@ -39,108 +42,69 @@ def get_compress_idx(module, percentage, threshold):
 
 
 # ========
-# Modify submodules
-# ========
-def modify_submodules(module):
-    conv1 = [module[0], nn.Conv2d(10, 10, 1, bias=False)]
-    module[0] = nn.Sequential(*conv1)
-    module.optimization = True
-
-
-# ========
-# Set submodule parameters
-# ========
-def set_module_param(module, params):
-    ws1 = params.weight1.size()
-    ps1 = params.projection1.size()
-
-    conv11 = module[0][0]
-    conv12 = module[0][1]
-
-    # set conv11
-    conv11.in_channels = ws1[1]
-    conv11.out_channels = ws1[0]
-    conv11.weight.data = params.weight1.data
-    conv11.bias = None
-
-    # set conv12
-    conv12.in_channels = ps1[1]
-    conv12.out_channels = ps1[0]
-    conv12.weight.data = params.projection1.data
-    if params.bias1 is not None:
-        conv12.bias = nn.Parameter(params.bias1)
-    # Note that the bias term is added to the second conv
-    # Do not need to set batchnorm1, activation, and batchnorm2.
-    # embed()
-
-
-# ========
 # Compress module parameters
 # ========
-def compress_module_param(module, percentage, threshold, index_pre=None, i=0):
-    conv11 = module[0][0]
-    conv12 = module[0][1]
-    batchnorm1 = module[1]
+def compress_module_param(module, percentage, threshold, p1_p2_same_ratio):
+    body = module._modules['body']
+    conv11 = body._modules['0']._modules['0']
+    conv12 = body._modules['0']._modules['1']
+    conv21 = body._modules['3']._modules['0']
+    conv22 = body._modules['3']._modules['1']
 
     ws1 = conv11.weight.shape
     weight1 = conv11.weight.data.view(ws1[0], -1).t()
     projection1 = conv12.weight.data.squeeze().t()
-    bias1 = conv12.bias.data if conv12.bias is not None else None
-    bn_weight1 = batchnorm1.weight.data
-    bn_bias1 = batchnorm1.bias.data
-    bn_mean1 = batchnorm1.running_mean.data
-    bn_var1 = batchnorm1.running_var.data
 
-    pindex1 = get_nonzero_index(projection1, dim='input', counter=1, percentage=percentage, threshold=threshold)[1]
-    pindex2 = get_nonzero_index(projection1, dim='output', counter=1, percentage=percentage, threshold=threshold)[1]
+    ws2 = conv21.weight.shape
+    weight2 = conv21.weight.data.view(ws2[0], -1).t()
+    projection2 = conv22.weight.data.squeeze().t()
 
-    # conv11
-    if index_pre is not None:
-        index = torch.repeat_interleave(index_pre, ws1[2] * ws1[3]) * ws1[2] * ws1[3] \
-                + torch.tensor(range(0, ws1[2] * ws1[3])).repeat(index_pre.shape[0]).cuda()
-        weight1 = torch.index_select(weight1, dim=0, index=index)
+    _, pindex1 = get_nonzero_index(projection1, dim='input', counter=1, percentage=percentage, threshold=threshold)
+    fix_channel = len(pindex1) if p1_p2_same_ratio else 0
+    _, pindex2 = get_nonzero_index(projection2, dim='input', counter=1, percentage=percentage, threshold=threshold,
+                                   fix_channel=fix_channel)
+
+    # compress conv11.
     weight1 = torch.index_select(weight1, dim=1, index=pindex1)
-    conv11.weight = nn.Parameter(weight1.t().view(pindex1.shape[0], -1, ws1[2], ws1[3]))
+    conv11.weight = nn.Parameter(weight1.t().view(pindex1.shape[0], ws1[1], ws1[2], ws1[3]))
     conv11.out_channels, conv11.in_channels = conv11.weight.size()[:2]
-
-    # conv12: projection1, bias1
+    # compress conv12: projection1, bias1
     projection1 = torch.index_select(projection1, dim=0, index=pindex1)
-    if i < 11:
-        projection1 = torch.index_select(projection1, dim=1, index=pindex2)
-        if bias1 is not None:
-            conv12.bias = nn.Parameter(torch.index_select(bias1, dim=0, index=pindex2))
-
-        # compress batchnorm1
-        batchnorm1.weight = nn.Parameter(torch.index_select(bn_weight1, dim=0, index=pindex2))
-        batchnorm1.bias = nn.Parameter(torch.index_select(bn_bias1, dim=0, index=pindex2))
-        batchnorm1.running_mean = torch.index_select(bn_mean1, dim=0, index=pindex2)
-        batchnorm1.running_var = torch.index_select(bn_var1, dim=0, index=pindex2)
-        batchnorm1.num_features = len(batchnorm1.weight)
-
-    conv12.weight = nn.Parameter(projection1.t().view(-1, pindex1.shape[0], 1, 1)) #TODO: check this one.
+    conv12.weight = nn.Parameter(projection1.t().view(ws1[0], pindex1.shape[0], 1, 1))
     conv12.out_channels, conv12.in_channels = conv12.weight.size()[:2]
+
+    # compress conv21
+    weight2 = torch.index_select(weight2, dim=1, index=pindex2)
+    conv21.weight = nn.Parameter(weight2.t().view(pindex2.shape[0], ws2[1], ws2[2], ws2[3]))
+    conv21.out_channels, conv21.in_channels = conv21.weight.size()[:2]
+    # compress conv22
+    projection2 = torch.index_select(projection2, dim=0, index=pindex2)
+    conv22.weight = nn.Parameter(projection2.t().view(ws2[0], pindex2.shape[0], 1, 1))
+    conv22.out_channels, conv22.in_channels = conv22.weight.size()[:2]
 
 
 def modify_network(net_current):
     args = net_current.args
     modules = []
     for module_cur in net_current.modules():
-        if isinstance(module_cur, BasicBlock):
+        if isinstance(module_cur, ResBlock):
             modules.append(module_cur)
-    # skip the first BasicBlock that deals with the input images
-    for module_cur in modules[1:]:
-        # embed()
-        # get initialization values for the Block to be compressed
-        weight1 = module_cur.state_dict()['0.weight']
-        bias1 = module_cur.state_dict()['0.bias']
+    for module_cur in modules:
+
+        # get initialization values for the ResBlock to be compressed
+        weight1 = module_cur.state_dict()['body.0.weight']
+        weight2 = module_cur.state_dict()['body.3.weight']
         if args.init_method.find('disturbance') >= 0:
-            weight1, projection1 = init_weight_proj(weight1, init_method=args.init_method, d=0, s=0.05)
+            weight1, projection1 = init_weight_proj(weight1, init_method=args.init_method, d=1, s=0.05)
+            weight2, projection2 = init_weight_proj(weight2, init_method=args.init_method, d=1, s=0.05)
         else:
             weight1, projection1 = init_weight_proj(weight1, init_method=args.init_method)
+            weight2, projection2 = init_weight_proj(weight2, init_method=args.init_method)
         # modify submodules in the ResBlock
         modify_submodules(module_cur)
         # set ResBlock module params
-        params = edict({'weight1': weight1, 'projection1': projection1, 'bias1': bias1})
+        params = edict({'weight1': weight1, 'projection1': projection1, 'bias1': None,
+                        'weight2': weight2, 'projection2': projection2, 'bias2': None})
         set_module_param(module_cur, params)
 
 
@@ -148,7 +112,7 @@ def make_model(args, ckp, converging):
     return Hinge(args, ckp, converging)
 
 
-class Hinge(VGG):
+class Hinge(ResNet):
 
     def __init__(self, args, ckp, converging):
         self.args = args
@@ -167,22 +131,36 @@ class Hinge(VGG):
             self.input_dim = (3, 224, 224)
         self.flops, self.params = get_model_complexity_info(self, self.input_dim, print_per_layer_stat=False)
 
+        # if self.args.model.lower().find('resnet') >= 0:
+        # self.register_parameter('running_grad_ratio', nn.Parameter(torch.randn(1)))
+        self.register_buffer('running_grad_ratio', None)
+
         modify_network(self)
 
+        if self.args.model.lower().find('hinge') >= 0 and not self.args.test_only and self.args.layer_balancing:
+            # need to calculate the layer-balancing regularizer during both training and loading phase.
+            self.layer_reg = self.calc_regularization()
+            for l, reg in enumerate(self.layer_reg):
+                print('ResBlock{:<2}, layer1 / layer2: {:<2.4f} / {:<2.4f}'.format(l + 1, reg[0], reg[1]))
+
     def find_modules(self):
-        return [m for m in self.modules() if isinstance(m, BasicBlock)][1:]
+        return [m for m in self.modules() if isinstance(m, ResBlock)]
 
     def sparse_param(self, module):
-        param1 = module.state_dict(keep_vars=True)['0.1.weight']
-        return param1
+        # embed()
+        param1 = module.state_dict(keep_vars=True)['body.0.1.weight']
+        param2 = module.state_dict(keep_vars=True)['body.3.1.weight']
+        return param1, param2
 
     def calc_regularization(self):
         layer_reg = []
         modules = self.find_modules()
-        for l, module in enumerate(modules):
-            projection1 = self.sparse_param(module)
-            layer_reg.append(torch.norm(projection1, p=2, dim=1).mean().detach().cpu().numpy() +
-                             torch.norm(projection1, p=2, dim=0).mean().detach().cpu().numpy())
+        # embed()
+        for m in modules:
+            param1, param2 = self.sparse_param(m)
+            mean1 = torch.norm(param1.squeeze().t(), p=2, dim=1).mean().detach().cpu().numpy()
+            mean2 = torch.norm(param2.squeeze().t(), p=2, dim=1).mean().detach().cpu().numpy()
+            layer_reg.append([mean1, mean2])
         return layer_reg
 
     def calc_sparsity_solution(self, param, dim, reg, sparsity_reg):
@@ -226,49 +204,91 @@ class Hinge(VGG):
             scale = scale.repeat(param.shape[0], 1).t()
         return scale
 
+    def p1_p2_gradient(self, modules):
+        p1_grad = []
+        p2_grad = []
+        for l, m in enumerate(modules):
+            projection1, projection2 = self.sparse_param(m)
+            p1_grad.append(torch.sum(torch.norm(projection1.grad.squeeze().t(), dim=1)))
+            p2_grad.append(torch.sum(torch.norm(projection2.grad.squeeze().t(), dim=1)))
+        return sum(p1_grad), sum(p2_grad)
+
+    def update_grad_ratio(self):
+        modules = self.find_modules()
+        p1_grad, p2_grad = self.p1_p2_gradient(modules)
+        grad_ratio = p1_grad / p2_grad
+        if self.running_grad_ratio is None:
+            self.running_grad_ratio = grad_ratio
+        else:
+            momentum = 0.9
+            self.running_grad_ratio = self.running_grad_ratio * (1 - momentum) + grad_ratio * momentum
+            device = self.running_grad_ratio.device
+            self.running_grad_ratio = min(max(self.running_grad_ratio, torch.tensor(5/9, device=device)), torch.tensor(9/5, device=device))
+
     def proximal_operator(self, lr, batch, regularization):
         modules = self.find_modules()
         for l in range(len(modules)):
-            param1 = self.sparse_param(modules[l])
+            param1, param2 = self.sparse_param(modules[l])
             if batch == 100 and l == 0:
                 print('Regularization is {}'.format(regularization))
-            reg = regularization * lr
 
-            scale1 = self.calc_sparsity_solution(param1.data, 1, reg, self.args.sparsity_regularizer)
-            param1.data = torch.mul(scale1, param1.data.squeeze().t()).t().view(param1.shape)
-            scale2 = self.calc_sparsity_solution(param1.data, 0, reg, self.args.sparsity_regularizer)
-            param1.data = torch.mul(scale2, param1.data.squeeze().t()).t().view(param1.shape)
+            if self.args.layer_balancing:
+                reg1 = regularization * lr * self.layer_reg[l][0]
+                reg2 = regularization * lr * self.layer_reg[l][1]
+            else:
+                reg1 = regularization * lr
+                reg2 = regularization * lr
+
+            scale1 = self.calc_sparsity_solution(param1, 1, reg1, self.args.sparsity_regularizer)
+            scale2 = self.calc_sparsity_solution(param2, 1, reg2, self.args.sparsity_regularizer)
+
+            # reg = regularization * lr
+            # # n1 = torch.norm(param1.squeeze().t(), p=2, dim=0)
+            # # n2 = torch.norm(param2.squeeze().t(), p=2, dim=1)
+            # # scale1 = torch.max(1 - reg / (n1 + eps), torch.zeros_like(n1, device=n1.device))
+            # # scale2 = torch.max(1 - reg / (n2 + eps), torch.zeros_like(n2, device=n2.device))
+            # # scale1 = scale1.repeat(param1.shape[1], 1)
+            # # scale2 = scale2.repeat(param2.shape[0], 1).t()
+            # scale2 = self.calc_sparsity_solution(param2, 1, reg, self.args.sparsity_regularizer)
+            # if self.args.p1_p2_regularization == 'proximal':
+            #     reg = reg * self.running_grad_ratio
+            # scale1 = self.calc_sparsity_solution(param1, 1, reg, self.args.sparsity_regularizer)
+
+            # if batch % 100 == 0 and l == 0:
+            #     with print_array_on_one_line():
+            #         print('Scale1: \n{}'.format(scale1.detach().cpu().numpy()))
+            #         print('Scale2: \n{}'.format(scale2.detach().cpu().numpy()))
+
+            param1.data = torch.mul(scale1, param1.squeeze().t()).t().view(param1.shape)
+            param2.data = torch.mul(scale2, param2.squeeze().t()).t().view(param2.shape)
 
     def compute_loss(self, batch, current_epoch, converging):
         """
         loss = ||Y - Yc||^2 + lambda * (||A_1||_{2,1} + ||A_2 ^T||_{2,1})
         """
-        modules = self.find_modules()
         lambda_factor = self.args.regularization_factor
         q = self.args.q
-        loss_proj11 = []
-        loss_proj12 = []
-        for l, m in enumerate(modules):
-            projection1 = self.sparse_param(m)
+        loss_proj1 = []
+        loss_proj2 = []
+        for l, m in enumerate(self.find_modules()):
+            projection1, projection2 = self.sparse_param(m)
             # if batch % 100 == 0 and i == 0:
             #     with print_array_on_one_line():
             #         print('Norm1: \n{}'.format((torch.sum(projection1.squeeze().t() ** 2, dim=0) ** (q / 2)).detach().cpu().numpy()))
             #         print('Norm2: \n{}'.format((torch.sum(projection2.squeeze().t() ** 2, dim=1) ** (q / 2)).detach().cpu().numpy()))
-            loss_proj11.append(torch.sum(torch.sum(projection1.squeeze().t() ** 2, dim=1) ** (q / 2)) ** (1 / q))
-            loss_proj12.append(torch.sum(torch.sum(projection1.squeeze().t() ** 2, dim=0) ** (q / 2)) ** (1 / q))
-            # embed()
-            if not converging and (batch + 1) % 200 == 0:
+            loss_proj1.append(torch.sum(torch.sum(projection1.squeeze().t() ** 2, dim=1) ** (q / 2)) ** (1 / q))
+            loss_proj2.append(torch.sum(torch.sum(projection2.squeeze().t() ** 2, dim=1) ** (q / 2)) ** (1 / q))
+
+            if not converging and (batch + 1) % 300 == 0:
                 path = os.path.join(self.args.dir_save, self.args.save, 'ResBlock{}_norm_distribution'.format(l))
                 if not os.path.exists(path):
                     os.makedirs(path)
-                filename1 = os.path.join(path, 'Row_Epoch{}_Batch{}'.format(current_epoch, batch + 1))
-                filename2 = os.path.join(path, 'Column_Epoch{}_Batch{}'.format(current_epoch, batch + 1))
-                plot_figure(projection1.squeeze().t(), l, filename1)
-                plot_figure(projection1.squeeze(), l, filename2)
-        # print(loss_proj11[6], loss_proj12[6])
-        lossp1 = sum(loss_proj11) #/ len(loss_proj11)
-        lossp2 = sum(loss_proj12) #/ len(loss_proj12)
-
+                filename1 = os.path.join(path, 'P1_Epoch{}_Batch{}'.format(current_epoch, batch + 1))
+                filename2 = os.path.join(path, 'P2_Epoch{}_Batch{}'.format(current_epoch, batch + 1))
+                plot_figure(projection1.squeeze(), l, filename1)
+                plot_figure(projection2.squeeze(), l, filename2)
+        lossp1 = sum(loss_proj1) / len(loss_proj1)
+        lossp2 = sum(loss_proj2) / len(loss_proj2)
         # loss_proj1 = torch.sum((torch.sum(projection1 ** 2, dim=0) ** q))
         # loss_proj2 = torch.sum((torch.sum(projection2 ** 2, dim=1) ** q))
         if self.args.optimizer == 'SGD':
@@ -276,18 +296,9 @@ class Hinge(VGG):
             lossp2 *= lambda_factor
         return lossp1, lossp2
 
-    def index_pre(self, percentage, threshold):
-        index = []
-        for module_cur in self.find_modules():
-            conv12 = module_cur[0][1]
-            projection1 = conv12.weight.data.squeeze().t()
-            index.append(get_nonzero_index(projection1, dim='output', counter=1, percentage=percentage, threshold=threshold)[1])
-        return index
-
     def compress(self, **kwargs):
-        index = [None] + self.index_pre(self.args.remain_percentage, self.args.threshold)
-        for i, module_cur in enumerate(self.find_modules()):
-            compress_module_param(module_cur, self.args.remain_percentage, self.args.threshold, index[i], i)
+        for module_cur in self.find_modules():
+            compress_module_param(module_cur, self.args.remain_percentage, self.args.threshold, self.args.p1_p2_same_ratio)
 
     def print_compress_info(self, epoch_continue):
         info_compress = edict(
@@ -302,7 +313,7 @@ class Hinge(VGG):
         ratio_per_layer = [[], []]
         for l, m in enumerate(self.find_modules()):
             info_compress['info_layer{}'.format(l)] = \
-                get_compress_idx(m, self.args.remain_percentage, self.args.threshold)
+                get_compress_idx(m, self.args.remain_percentage, self.args.threshold, self.args.p1_p2_same_ratio)
             for i, info_layer in enumerate(info_compress['info_layer{}'.format(l)]):
                 self.ckp.write_log(
                     'ResBlock{:<2} Layer{}: channels -> orginal={:<2}, compress={:<2}, ratio={:2.4f};'
@@ -328,13 +339,27 @@ class Hinge(VGG):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 m.out_channels, m.in_channels = m.weight.size()[:2]
-            elif isinstance(m, nn.BatchNorm2d):
-                m.num_features = m.weight.size()[0]
-        # linear_layer = self.classifier[0]
-        # weight = linear_layer.weight.data
-        # linear_layer.in_features = weight.shape[1]
+            # elif isinstance(m, nn.BatchNorm2d):
+            #     m.num_features = m.weight.size()[0]
             # else:
             #     raise NotImplementedError('Channel setting is not implemented for {}'.format(m.__class__.__name__))
+
+    # def load_state_dict(self, state_dict, strict=True):
+    #     if strict:
+    #         # used to load the model parameters during training
+    #         super(Hinge, self).load_state_dict(state_dict, strict)
+    #     else:
+    #         # used to load the model parameters during test
+    #         own_state = self.state_dict(keep_vars=True)
+    #         for (name, param), (name_o, param_o) in zip(state_dict.items(), own_state.items()):
+    #             # if name in own_state:
+    #             if isinstance(param, nn.Parameter):
+    #                 param = param.data
+    #             if param.size() != own_state[name_o].size():
+    #                 own_state[name_o].data = param
+    #             else:
+    #                 own_state[name_o].data.copy_(param)
+    #         self.set_channels()
 
     def load_state_dict(self, state_dict, strict=True):
         if strict:
@@ -352,3 +377,4 @@ class Hinge(VGG):
                     else:
                         own_state[name].data.copy_(param)
             self.set_channels()
+
