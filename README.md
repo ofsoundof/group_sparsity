@@ -34,9 +34,9 @@ The flowchart of the proposed algorithm.
 
 ## Results
 
-<img src="/figs/hinge_kse_flops.eps" width="400">
+<img src="/figs/hinge_kse_flops.eps" width="900">
 
-<img src="/figs/hinge_kse_params.eps" width="400">
+<img src="/figs/hinge_kse_params.eps" width="600">
 
 <img src="/figs/resnet164_cifar100.eps" width="400">
 
