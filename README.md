@@ -225,21 +225,21 @@ The scripts for compressing ResNet, DenseNet, VGG, ResNeXt, and WRN are released
  
 ## Results
 
-<img src="/figs/hinge_kse_flops.png" width="400">
+<img src="/figs/hinge_kse_flops.png" width="400"> <img src="/figs/hinge_kse_params.png" width="400">
 FLOP ratio comparison between KSE and Hinge under different compression ratio. ResNet56 is compressed. Top-1 error rate is reported
 
-<img src="/figs/hinge_kse_params.png" width="400">
+
 Parameter ratio comparison between KSE and Hinge under different compression ratio.
 
-<img src="/figs/resnet164_cifar100.png" width="400">
+<img src="/figs/resnet164_cifar100.png" width="400"> <img src="/figs/resnext164_cifar100.png" width="400">
 Comparison between SSS and the proposed Hinge method on ResNet. Top-1 error rate is reported for CIFAR100.
 
-<img src="/figs/resnext164_cifar100.png" width="400">
+
 Comparison between SSS and the proposed Hinge method on ResNeXt.
 
 <img src="/figs/table1.png" width="600">
-<img src="/figs/table2.png" width="600">
-<img src="/figs/table4.png" width="600">
+<img src="/figs/table2.png" width="550">
+<img src="/figs/table4.png" width="500">
 
 
 ## Reference
