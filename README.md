@@ -35,8 +35,10 @@ A sparsity-inducing matrix A is attached to a normal convolution. The matrix act
 
 The flowchart of the proposed algorithm.
 
-|<img src="/figs/group_sparsity_column.png" width="400"> | <img src="/figs/group_sparsity_row.png" width="400"> |
-|Group sparsity enforced on the column of the sparsity-inducing matrix. | Group sparsity enforced on the row of the sparsity-inducing matrix.|
+|<img src="/figs/group_sparsity_column.png" width="400">|<img src="/figs/group_sparsity_row.png" width="400">|
+|:---:|:---:|
+|<i>Group sparsity enforced on the column of the sparsity-inducing matrix.</i>|<i>Group sparsity enforced on the row of the sparsity-inducing matrix.</i>|
+
 
 ## Dependencies
 * Python 3.7.4
