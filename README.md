@@ -23,10 +23,13 @@ Filter pruning and filter decomposition (also termed low-rank approximation) hav
 A sparsity-inducing matrix A is attached to a normal convolution. The matrix acts as the hinge between filter pruning and decomposition. By enforcing group sparsity to the columns and rows of the matrix, equivalent pruning and decomposition operations can be obtained. 
 
 ## Contribution
-**The connection between filter pruning and decomposition is analyzed from the perspective of compact tensor approximation.**
-**A sparsity-inducing matrix is introduced to hinge filter pruning and decomposition and bring them under the same formulation.**
-**A bunch of techniques including binary search, gradient based learning rate adjustment, layer balancing, and annealing methods are developed to solve the problem.**
-**The proposed method can be applied to various CNNs. We apply this method to VGG, DenseNet, ResNet, ResNeXt, and WRN.**
+**1. The connection between filter pruning and decomposition is analyzed from the perspective of compact tensor approximation.**
+
+**2. A sparsity-inducing matrix is introduced to hinge filter pruning and decomposition and bring them under the same formulation.**
+
+**3. A bunch of techniques including binary search, gradient based learning rate adjustment, layer balancing, and annealing methods are developed to solve the problem.**
+
+**4. The proposed method can be applied to various CNNs. We apply this method to VGG, DenseNet, ResNet, ResNeXt, and WRN.**
 
 <img src="/figs/flowchart.png" width="500">
 
@@ -51,193 +54,190 @@ Group sparsity enforced on the row of the sparsity-inducing matrix.
 ## Test
 
 1. Download the model zoo from [Google Drive](https://drive.google.com/file/d/1B057k6BHFXDUWFypuuIiGRqiXHnqUr1y/view?usp=sharing) or [Baidu Wangpan (extraction code: )](). This contains the pretrained original models and the compressed models. Place the models in `./model_zoo`.
-2. Use the following scripts in [`./scripts/demo_test.sh`](./scripts/demo_test.sh) to test the compressed models. Be sure the change the directories `SAVE_PATH` and `DATA_PATH`.
+
+2. Cd to [`./scripts`](./scripts). 
+
+3. Use the following scripts in [`./scripts/demo_test.sh`](./scripts/demo_test.sh) to test the compressed models. 
+
+    Be sure the change the directories `SAVE_PATH` and `DATA_PATH`.
+
     `SAVE_PATH`: where the dataset is stored.
+
     `SAVE_PATH`: where you want to save the results.
 
 ```bash
-	MODEL_PATH=../model_zoo/baseline
-	SAVE_PATH=~/projects/logs/hinge_test/
-	DATA_PATH=~/projects/data
+	MODEL_PATH=../model_zoo/compressed
+    SAVE_PATH=~/projects/logs/hinge_test/new
+    DATA_PATH=~/projects/data
 
+    ######################################
+    # 1. VGG, CIFAR10
+    ######################################
+    MODEL=Hinge_VGG
+    TEMPLATE=CIFAR10
+    CHECKPOINT=${MODEL}_${TEMPLATE}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=1 python ../main_hinge.py --save $CHECKPOINT --template "linear3_${TEMPLATE}_VGG" --model ${MODEL} --vgg_type 16 --test_only \
+    --pretrain ${MODEL_PATH}/vgg_cifar10.pt --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
-	######################################
-	# 1. VGG, CIFAR10
-	######################################
-	MODEL=VGG
-	TEMPLATE=CIFAR10
-	CHECKPOINT=${MODEL}_${TEMPLATE}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=1 python ../main.py --save $CHECKPOINT --template "linear3_${TEMPLATE}_VGG" --model ${MODEL} --vgg_type 16 --test_only \
-	--pretrain ${MODEL_PATH}/vgg.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
+    ######################################
+    # 2. DenseNet, CIFAR10
+    ######################################
+    MODEL=Hinge_DENSENET_SVD
+    LAYER=40
+    TEMPLATE=CIFAR10
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=1 python ../main_hinge.py --save $CHECKPOINT --template DenseNet --model ${MODEL} --depth ${LAYER} --test_only \
+    --pretrain ${MODEL_PATH}/densenet_cifar10.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
+    ######################################
+    # 3. ResNet164, CIFAR10
+    ######################################
+    MODEL=Hinge_RESNET_BOTTLENECK
+    LAYER=164
+    TEMPLATE=CIFAR10
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=1 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --no_bias --test_only \
+    --pretrain ${MODEL_PATH}/resnet164_cifar10.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
-	######################################
-	# 2. DenseNet, CIFAR10
-	######################################
-	MODEL=DENSENET
-	LAYER=40
-	TEMPLATE=CIFAR10
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=1 python ../main.py --save $CHECKPOINT --template DenseNet --model ${MODEL} --depth ${LAYER} --test_only \
-	--pretrain ${MODEL_PATH}/densenet_cifar10.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
+    ######################################
+    # 4. ResNet164, CIFAR100
+    ######################################
+    MODEL=Hinge_RESNET_BOTTLENECK
+    LAYER=164
+    TEMPLATE=CIFAR100
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=1 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --no_bias --test_only \
+    --pretrain ${MODEL_PATH}/resnet164_cifar100.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
+    ######################################
+    # 5. ResNet56, CIFAR10
+    ######################################
+    MODEL=Hinge_ResNet_Basic_SVD
+    LAYER=56
+    CHECKPOINT=${MODEL}_CIFAR10_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=1 python ../main_hinge.py --save $CHECKPOINT --template ResNet --model ${MODEL} --depth ${LAYER} --downsample_type A --test_only \
+    --pretrain ${MODEL_PATH}/resnet56_cifar10.pt --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
-	######################################
-	# 3. ResNet164, CIFAR10
-	######################################
-	MODEL=ResNet
-	LAYER=164
-	TEMPLATE=CIFAR10
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=1 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER}  --no_bias --test_only \
-	--pretrain ${MODEL_PATH}/resnet164_cifar10.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
+    ######################################
+    # 6. ResNet20, CIFAR10
+    ######################################
+    MODEL=Hinge_ResNet_Basic_SVD
+    LAYER=20
+    TEMPLATE=CIFAR10
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=0 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --downsample_type A --test_only \
+    --pretrain ${MODEL_PATH}/resnet20_cifar10.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
+    ######################################
+    # 7. ResNet20, CIFAR100
+    ######################################
+    MODEL=Hinge_ResNet_Basic_SVD
+    LAYER=20
+    TEMPLATE=CIFAR100
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=0 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --downsample_type A --test_only \
+    --pretrain ${MODEL_PATH}/resnet20_cifar100.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
-	######################################
-	# 4. ResNet164, CIFAR100
-	######################################
-	MODEL=ResNet
-	LAYER=164
-	TEMPLATE=CIFAR100
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=1 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER}  --no_bias --test_only \
-	--pretrain ${MODEL_PATH}/resnet164_cifar100.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
+    ######################################
+    # 8. ResNeXt164, CIFAR10
+    ######################################
+    MODEL=Hinge_RESNEXT
+    LAYER=164
+    TEMPLATE=CIFAR10
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=1 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
+    --pretrain ${MODEL_PATH}/resnext164_cifar10.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
+    ######################################
+    # 9. ResNeXt164, CIFAR100
+    ######################################
+    MODEL=Hinge_RESNEXT
+    LAYER=164
+    TEMPLATE=CIFAR100
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=1 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
+    --pretrain ${MODEL_PATH}/resnext164_cifar100.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
-	######################################
-	# 5. ResNet56, CIFAR10
-	######################################
-	MODEL=ResNet
-	LAYER=56
-	TEMPLATE=CIFAR10
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=1 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --downsample_type A --test_only \
-	--pretrain ${MODEL_PATH}/resnet56_b128e164.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
+    ######################################
+    # 10. ResNeXt20, CIFAR10
+    ######################################
+    MODEL=Hinge_RESNEXT
+    LAYER=20
+    TEMPLATE=CIFAR10
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=0 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
+    --pretrain ${MODEL_PATH}/resnext20_cifar10.pt --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
+    ######################################
+    # 11. ResNeXt20, CIFAR100
+    ######################################
+    MODEL=Hinge_RESNEXT
+    LAYER=20
+    TEMPLATE=CIFAR100
+    CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=0 python ../main_hinge.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
+    --pretrain ${MODEL_PATH}/resnext20_cifar100.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
-	######################################
-	# 6. ResNet20, CIFAR10
-	######################################
-	MODEL=ResNet
-	LAYER=20
-	TEMPLATE=CIFAR10
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=0 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --downsample_type A --test_only \
-	--pretrain ${MODEL_PATH}/resnet20_cifar10.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
+    ######################################
+    # 12. WRN, CIFAR100, 0.5
+    ######################################
+    MODEL=Hinge_WIDE_RESNET
+    TEMPLATE=CIFAR100
+    CHECKPOINT=${MODEL}_${TEMPLATE}_0.5
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=0 python ../main_hinge.py --save $CHECKPOINT --template "${TEMPLATE}_Wide_ResNet" --model ${MODEL} --depth 16 --widen_factor 10 --test_only \
+    --pretrain ${MODEL_PATH}/wrn_cifar100_5.pt  --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 
-
-	######################################
-	# 7. ResNet20, CIFAR100
-	######################################
-	MODEL=ResNet
-	LAYER=20
-	TEMPLATE=CIFAR100
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=0 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --downsample_type A --test_only \
-	--pretrain ${MODEL_PATH}/resnet20_cifar100.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
-
-
-	######################################
-	# 8. ResNeXt164, CIFAR10
-	######################################
-	MODEL=ResNeXt
-	LAYER=164
-	TEMPLATE=CIFAR10
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=1 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
-	--pretrain ${MODEL_PATH}/resnext164_cifar10.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
-
-
-	######################################
-	# 9. ResNeXt164, CIFAR100
-	######################################
-	MODEL=ResNeXt
-	LAYER=164
-	TEMPLATE=CIFAR100
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=1 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
-	--pretrain ${MODEL_PATH}/resnext164_cifar100.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH} 
-
-
-	######################################
-	# 10. ResNeXt20, CIFAR10
-	######################################
-	MODEL=ResNeXt
-	LAYER=20
-	TEMPLATE=CIFAR10
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=0 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
-	--pretrain ${MODEL_PATH}/resnext20_cifar10.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
-
-
-	######################################
-	# 11. ResNeXt20, CIFAR100
-	######################################
-	MODEL=ResNeXt
-	LAYER=20
-	TEMPLATE=CIFAR100
-	CHECKPOINT=${MODEL}_${TEMPLATE}_L${LAYER}
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=0 python ../main.py --save $CHECKPOINT --template ${TEMPLATE} --model ${MODEL} --depth ${LAYER} --cardinality 32 --bottleneck_width 1 --test_only \
-	--pretrain ${MODEL_PATH}/resnext20_cifar100.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
-
-
-	######################################
-	# 12. WRN, CIFAR100
-	######################################
-	MODEL=Wide_ResNet
-	TEMPLATE=CIFAR100
-	CHECKPOINT=${MODEL}_${TEMPLATE}_0.5
-	echo $CHECKPOINT
-	CUDA_VISIBLE_DEVICES=0 python ../main.py --save $CHECKPOINT --template "${TEMPLATE}_Wide_ResNet" --model ${MODEL} --depth 16 --widen_factor 10 --test_only \
-	--pretrain ${MODEL_PATH}/wide_resnet_cifar100.pt \
-	--dir_save ${SAVE_PATH} \
-	--dir_data ${DATA_PATH}
+    ######################################
+    # 13. WRN, CIFAR100, 0.7
+    ######################################
+    MODEL=Hinge_WIDE_RESNET
+    TEMPLATE=CIFAR100
+    CHECKPOINT=${MODEL}_${TEMPLATE}_0.7
+    echo $CHECKPOINT
+    CUDA_VISIBLE_DEVICES=0 python ../main_hinge.py --save $CHECKPOINT --template "${TEMPLATE}_Wide_ResNet" --model ${MODEL} --depth 16 --widen_factor 10 --test_only \
+    --pretrain ${MODEL_PATH}/wrn_cifar100_7.pt --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 ```
-
+    To test the original uncompressed models, please refer to [`./scripts/baseline_test.sh`](./scripts/baseline_test.sh)
 ## Train
+The scripts for compressing ResNet, DenseNet, VGG, ResNeXt, and WRN are released.
 
+1. Cd to [`./scripts`](./scripts)
+
+2. Make sure that the pretrained original models are already downloaded and placed in `./model_zoo/baseline`.
+
+3. Run the scripts `hinge_XXX.sh` to reproduce the results in our paper, where `XXX` may be replace by `vgg`, `densenet`, `resnet`, `resnext`, and `wide_resnet` depending on which network you want to compress. 
+
+4. Be sure the change the directories `SAVE_PATH` and `DATA_PATH` in `hinge_XXX.sh`.
+ 
 ## Results
 
-<img src="/figs/hinge_kse_flops.eps" width="900">
+<img src="/figs/hinge_kse_flops.png" width="400">
+FLOP ratio comparison between KSE and Hinge under different compression ratio. ResNet56 is compressed. Top-1 error rate is reported
 
-<img src="/figs/hinge_kse_params.eps" width="600">
+<img src="/figs/hinge_kse_params.png" width="400">
+Parameter ratio comparison between KSE and Hinge under different compression ratio.
 
-<img src="/figs/resnet164_cifar100.eps" width="400">
+<img src="/figs/resnet164_cifar100.png" width="400">
+Comparison between SSS and the proposed Hinge method on ResNet. Top-1 error rate is reported for CIFAR100.
 
-<img src="/figs/resnext164_cifar100.eps" width="400">
+<img src="/figs/resnext164_cifar100.png" width="400">
+Comparison between SSS and the proposed Hinge method on ResNeXt.
+
+<img src="/figs/table1.png" width="400">
+<img src="/figs/table2.png" width="400">
+<img src="/figs/table3.png" width="400">
 
 
 ## Reference

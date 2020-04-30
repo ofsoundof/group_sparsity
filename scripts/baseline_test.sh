@@ -164,7 +164,7 @@ CUDA_VISIBLE_DEVICES=0 python ../main.py --save $CHECKPOINT --template ${TEMPLAT
 ######################################
 MODEL=Wide_ResNet
 TEMPLATE=CIFAR100
-CHECKPOINT=${MODEL}_${TEMPLATE}_0.5
+CHECKPOINT=${MODEL}_${TEMPLATE}
 echo $CHECKPOINT
 CUDA_VISIBLE_DEVICES=0 python ../main.py --save $CHECKPOINT --template "${TEMPLATE}_Wide_ResNet" --model ${MODEL} --depth 16 --widen_factor 10 --test_only \
 --pretrain ${MODEL_PATH}/wide_resnet_cifar100.pt \
