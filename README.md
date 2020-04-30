@@ -233,8 +233,8 @@ FLOP and parameter comparison between KSE and Hinge under different compression 
 
 Comparison between SSS and the proposed Hinge method on ResNet and ResNeXt. Top-1 error rate is reported for CIFAR100.
 
-<img src="/figs/table1.png" width="500">
-<img src="/figs/table2.png" width="475">
+<img src="/figs/table1.png" width="450">
+<img src="/figs/table2.png" width="450">
 <img src="/figs/table4.png" width="450">
 
 
