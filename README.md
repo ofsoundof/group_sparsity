@@ -53,7 +53,7 @@ Group sparsity enforced on the row of the sparsity-inducing matrix.
 
 ## Test
 
-1. Download the model zoo from [Google Drive](https://drive.google.com/file/d/1B057k6BHFXDUWFypuuIiGRqiXHnqUr1y/view?usp=sharing) or [Baidu Wangpan (extraction code: )](). This contains the pretrained original models and the compressed models. Place the models in `./model_zoo`.
+1. Download the model zoo from [Google Drive](https://drive.google.com/file/d/1B057k6BHFXDUWFypuuIiGRqiXHnqUr1y/view?usp=sharing) or [Dropbox](https://www.dropbox.com/s/e47cxdv9vwh2z8w/model_zoo.zip?dl=0). This contains the pretrained original models and the compressed models. Place the models in `./model_zoo`.
 
 2. Cd to [`./scripts`](./scripts). 
 
@@ -233,8 +233,8 @@ FLOP and parameter comparison between KSE and Hinge under different compression 
 
 Comparison between SSS and the proposed Hinge method on ResNet and ResNeXt. Top-1 error rate is reported for CIFAR100.
 
-<img src="/figs/table1.png" width="550">
-<img src="/figs/table2.png" width="500">
+<img src="/figs/table1.png" width="500">
+<img src="/figs/table2.png" width="475">
 <img src="/figs/table4.png" width="450">
 
 
@@ -249,3 +249,20 @@ If you find our work useful in your research of publication, please cite our wor
   year={2020}
 }
 ```
+
+## Acknowledgements
+This work was partly supported by the ETH Zurich Fund (OK), by VSS ASTRA, SBB and Huawei projects, and by Amazon AWS and Nvidia GPU grants.
+
+This repository is built on [EDSR (PyTorch)](https://github.com/thstkdgus35/EDSR-PyTorch). We thank the authors for making their EDSR codes public.
+
+This repository is also based on the [implementation](https://github.com/ofsoundof/learning_filter_basis) of our former paper [Learning Filter Basis for Convolutional Neural Network Compression](https://arxiv.org/abs/1908.08932). If you are interested, please refer to:
+
+```
+@inproceedings{li2019learning,
+  title = {Learning Filter Basis for Convolutional Neural Network Compression},
+  author = {Li, Yawei and Gu, Shuhang and Van Gool, Luc and Timofte, Radu},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision},
+  year = {2019}
+}
+```
+
