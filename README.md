@@ -209,7 +209,9 @@ Group sparsity enforced on the row of the sparsity-inducing matrix.
     CUDA_VISIBLE_DEVICES=0 python ../main_hinge.py --save $CHECKPOINT --template "${TEMPLATE}_Wide_ResNet" --model ${MODEL} --depth 16 --widen_factor 10 --test_only \
     --pretrain ${MODEL_PATH}/wrn_cifar100_7.pt --dir_save ${SAVE_PATH} --dir_data ${DATA_PATH}
 ```
+
     To test the original uncompressed models, please refer to [`./scripts/baseline_test.sh`](./scripts/baseline_test.sh)
+
 ## Train
 The scripts for compressing ResNet, DenseNet, VGG, ResNeXt, and WRN are released.
 
@@ -235,9 +237,9 @@ Comparison between SSS and the proposed Hinge method on ResNet. Top-1 error rate
 <img src="/figs/resnext164_cifar100.png" width="400">
 Comparison between SSS and the proposed Hinge method on ResNeXt.
 
-<img src="/figs/table1.png" width="400">
-<img src="/figs/table2.png" width="400">
-<img src="/figs/table3.png" width="400">
+<img src="/figs/table1.png" width="600">
+<img src="/figs/table2.png" width="600">
+<img src="/figs/table4.png" width="600">
 
 
 ## Reference
