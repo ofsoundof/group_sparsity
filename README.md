@@ -12,11 +12,11 @@ This is the official code implementing "Group Sparsity: The Hinge Between Filter
 ## Introduction
 In this paper, we analyze two popular network compression techniques, i.e. filter pruning and low-rank decomposition, in a unified sense. By simply changing the way the sparsity regularization is enforced, filter pruning and lowrank decomposition can be derived accordingly. This provides another flexible choice for network compression because the techniques complement each other. For example, in popular network architectures with shortcut connections (e.g. ResNet), filter pruning cannot deal with the last convolutional layer in a ResBlock while the low-rank decomposition methods can. In addition, we propose to compress the whole network jointly instead of in a layer-wise manner. Our approach proves its potential as it compares favorably to the state-of-the-art on several benchmarks.
 
-<img src="/figs/teaser.png" width="400">
+<img src="/figs/teaser.png" width="900">
 
 A sparsity-inducing matrix A is attached to a normal convolution. The matrix acts as the hinge between filter pruning and decomposition. By enforcing group sparsity to the columns and rows of the matrix, equivalent pruning and decomposition operations can be obtained. 
 
-<img src="/figs/flowchart.png" width="400">
+<img src="/figs/flowchart.png" width="600">
 
 The flowchart of the proposed algorithm.
 
