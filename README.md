@@ -52,7 +52,7 @@ The flowchart of the proposed algorithm.
 
 ## Test
 
-1. Download the model zoo from [Google Drive](https://drive.google.com/file/d/1B057k6BHFXDUWFypuuIiGRqiXHnqUr1y/view?usp=sharing) or [Dropbox](https://www.dropbox.com/s/e47cxdv9vwh2z8w/model_zoo.zip?dl=0). This contains the pretrained original models and the compressed models. Place the models in `./model_zoo`.
+1. Download the model zoo from [Releases/v1.0.0](https://github.com/ofsoundof/group_sparsity/releases/tag/v1.0.0) or [Dropbox](https://www.dropbox.com/s/e47cxdv9vwh2z8w/model_zoo.zip?dl=0). This contains the pretrained original models and the compressed models. Place the models in `./model_zoo`.
 
 2. Cd to [`./scripts`](./scripts). 
 
